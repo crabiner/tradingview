@@ -1,0 +1,71 @@
+//@version=5
+strategy("Price Crossover Strategy", overlay=true, initial_capital=10000, default_qty_value=10000, default_qty_type=strategy.percent_of_equity, shorttitle="Price Cross Strategy", process_orders_on_close = true) //
+
+// Parameters
+p = input(150, title="MA Length")
+buffer = input.float(0.1, "Buffer Percentage", minval=0.0, maxval=5.0, step=0.1)
+maxAboveSMA = input.float(3, "Maximum Percentage Above SMA", minval=0.0, maxval=10.0, step=0.1)
+minDistance = input.float(1.5, "Min % Distance Above MA", minval=0.1, maxval=10.0)
+
+iCurviture = input.float(0.05, "Minimum Derivative", minval=-1.0, maxval=1.0, step=0.01)
+
+// BACKTEST DATE RANGE using input.time
+Start_Date = input.time(timestamp("2018-01-01 00:00:00"), title="Start Date")
+End_Date = input.time(timestamp("2024-10-01 23:59:59"), title="End Date")
+
+// Date Range Condition
+Date_Range() => time >= Start_Date and time <= End_Date ? true : false
+
+// Last day before End_Date
+last_day = timestamp(year(End_Date), month(End_Date), dayofmonth(End_Date), 12, 0)
+
+// Calculation of Moving Average on daily timeframe with lookahead
+ma_daily = request.security(syminfo.tickerid, "D", ta.sma(close, p)) 
+ma_daily_1 = request.security(syminfo.tickerid, "D", ta.sma(close[1], p))
+ma_daily_2 = request.security(syminfo.tickerid, "D", ta.sma(close[2], p)) 
+
+// Calculate the derivative using three-point backward difference
+maSlope3 = (3 * ma_daily - 4 * ma_daily_1 + ma_daily_2) / (2)
+// Plot the derivative
+plot(maSlope3, color = color.blue, title = "Derivative")
+
+// Calculate the first and second derivatives of MA
+maSlope = ma_daily - ma_daily_1
+maCurvature = maSlope - (ma_daily_1 - ma_daily_2)
+
+// Crossover and Crossunder conditions
+crossOver = ta.crossover(close, ma_daily)
+crossUnder = ta.crossunder(close, ma_daily)
+
+// Calculate the buffer zone
+bufferZoneUpperCap = ma_daily * (1 + maxAboveSMA / 100)
+bufferZoneUpper = ma_daily * (1 + buffer / 100)
+bufferZoneLower = ma_daily * (1 - buffer / 100)
+
+// Additional condition for green candle
+isGreenCandle = close > close[1]
+
+// Adjust buy and sell signals with buffer zone
+buySignal = (close > bufferZoneUpper) and (close < bufferZoneUpperCap) and (maSlope3 > iCurviture) and Date_Range()
+sellSignal = close < bufferZoneLower and Date_Range()
+
+priceAboveMA = (close - ma_daily) / ma_daily * 100
+buySignal := buySignal and priceAboveMA > minDistance
+
+// Enter long position
+if (buySignal and time < last_day) 
+    strategy.entry("Long" , strategy.long )
+
+
+// Exit long position immediately
+if (sellSignal or time >= last_day)
+    strategy.close("Long")
+
+
+// Plotting the Moving Average
+isgreen = close > ma_daily
+colorLine = isgreen ? color.green : color.red
+colorBg = isgreen ? color.new(color.green, 50) : color.new(color.red, 50)
+maPlot = plot(ma_daily, color=colorLine)
+hlc3Plot = plot(hlc3, color=color.new(color.white, 50)) // Invisible hlc3 line
+fill(hlc3Plot, maPlot, color=colorBg)
