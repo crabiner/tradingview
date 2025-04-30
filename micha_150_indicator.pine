@@ -1,0 +1,68 @@
+//@version=5
+indicator("Micha 150", overlay=true)
+
+// Parameters
+p = input(150, title="MA Length")
+buffer = input.float(0.1, "Buffer Percentage", minval=0.0, maxval=5.0, step=0.1)
+maxAboveSMA = input.float(3, "Maximum Percentage Above SMA", minval=0.0, maxval=10.0, step=0.1)
+minDistance = input.float(1.5, "Min % Distance Above MA", minval=0.1, maxval=10.0, step=0.1)
+iCurviture = input.float(0.05, "Minimum Derivative", minval=-1.0, maxval=1.0, step=0.01)
+
+// Calculate Moving Average on Daily Timeframe
+ma_daily = request.security(syminfo.tickerid, "D", ta.sma(close, p)) 
+ma_daily_1 = request.security(syminfo.tickerid, "D", ta.sma(close[1], p))
+ma_daily_2 = request.security(syminfo.tickerid, "D", ta.sma(close[2], p)) 
+
+// Calculate the derivative using three-point backward difference
+maSlope3 = (3 * ma_daily - 4 * ma_daily_1 + ma_daily_2) / 2
+
+// Calculate the first and second derivatives of MA
+maSlope = ma_daily - ma_daily_1
+maCurvature = maSlope - (ma_daily_1 - ma_daily_2)
+
+// Calculate Buffer Zones
+bufferZoneUpperCap = ma_daily * (1 + maxAboveSMA / 100)
+bufferZoneUpper = ma_daily * (1 + buffer / 100)
+bufferZoneLower = ma_daily * (1 - buffer / 100)
+
+// Additional condition for green candle (not used in signals but kept for potential use)
+isGreenCandle = close > close[1]
+
+// Calculate Price Distance Above MA
+priceAboveMA = (close - ma_daily) / ma_daily * 100
+
+// Define Buy and Sell Signals
+buySignal = (close > bufferZoneUpper) and (close < bufferZoneUpperCap) and (maSlope3 > iCurviture) and (priceAboveMA > minDistance)
+sellSignal = close < bufferZoneLower
+
+// Simulate Position State
+var bool inPosition = false
+
+// Define Alert Conditions
+buyAlert = not inPosition and buySignal
+sellAlert = inPosition and sellSignal
+
+// Set Up Alerts
+alertcondition(buyAlert, title="Buy Signal", message="Time to buy")
+alertcondition(sellAlert, title="Sell Signal", message="Time to sell")
+
+// Add Labels for Visual Testing
+if buyAlert
+    label.new(bar_index, high, "Buy", color=color.green, style=label.style_label_down, textcolor=color.white)
+if sellAlert
+    label.new(bar_index, low, "Sell", color=color.red, style=label.style_label_up, textcolor=color.white)
+
+// Update Position State
+if buyAlert
+    inPosition := true
+else if sellAlert
+    inPosition := false
+
+// Plotting
+plot(maSlope3, color=color.blue, title="Derivative")
+isgreen = close > ma_daily
+colorLine = isgreen ? color.green : color.red
+colorBg = isgreen ? color.new(color.green, 50) : color.new(color.red, 50)
+maPlot = plot(ma_daily, color=colorLine)
+hlc3Plot = plot(hlc3, color=color.new(color.white, 50)) // Invisible hlc3 line
+fill(hlc3Plot, maPlot, color=colorBg)
